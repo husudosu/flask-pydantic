@@ -51,7 +51,13 @@ def is_iterable_of_models(content: Any) -> bool:
         return False
 
 
-def validate_many_models(model: Type[BaseModel], content: Any) -> List[BaseModel]:
+def validate_many_models(
+    model: Type[BaseModel],
+    content: Any,
+    include_input: bool = True,
+    include_url: bool = True,
+    include_context: bool = True
+) -> List[BaseModel]:
     try:
         return [model(**fields) for fields in content]
     except TypeError:
@@ -65,7 +71,11 @@ def validate_many_models(model: Type[BaseModel], content: Any) -> List[BaseModel
         ]
         raise ManyModelValidationError(err)
     except ValidationError as ve:
-        raise ManyModelValidationError(ve.errors())
+        raise ManyModelValidationError(ve.errors(
+            include_input=include_input,
+            include_url=include_url,
+            include_context=include_context
+        ))
 
 
 def validate_path_params(func: Callable, kwargs: dict) -> Tuple[dict, list]:
@@ -102,6 +112,9 @@ def validate(
     response_by_alias: bool = False,
     get_json_params: Optional[dict] = None,
     form: Optional[Type[BaseModel]] = None,
+    include_input: bool = True,
+    include_url: bool = True,
+    include_context: bool = True,
 ):
     """
     Decorator for route methods which will validate query, body and form parameters
@@ -177,7 +190,11 @@ def validate(
                 try:
                     q = query_model(**query_params)
                 except ValidationError as ve:
-                    err["query_params"] = ve.errors()
+                    err["query_params"] = ve.errors(
+                        include_input=include_input,
+                        include_url=include_url,
+                        include_context=include_context
+                    )
             body_in_kwargs = func.__annotations__.get("body")
             body_model = body_in_kwargs or body
             if body_model:
@@ -186,24 +203,39 @@ def validate(
                     try:
                         b = body_model(__root__=body_params).__root__
                     except ValidationError as ve:
-                        err["body_params"] = ve.errors()
+                        err["body_params"] = ve.errors(
+                            include_input=include_input,
+                            include_url=include_url,
+                            include_context=include_context
+                        )
                 elif request_body_many:
                     try:
-                        b = validate_many_models(body_model, body_params)
+                        b = validate_many_models(
+                            body_model,
+                            body_params,
+                            include_input=include_input,
+                            include_url=include_url,
+                            include_context=include_context
+                        )
                     except ManyModelValidationError as e:
                         err["body_params"] = e.errors()
                 else:
                     try:
                         b = body_model(**body_params)
                     except TypeError:
-                        content_type = request.headers.get("Content-Type", "").lower()
+                        content_type = request.headers.get(
+                            "Content-Type", "").lower()
                         media_type = content_type.split(";")[0]
                         if media_type != "application/json":
                             return unsupported_media_type_response(content_type)
                         else:
                             raise JsonBodyParsingError()
                     except ValidationError as ve:
-                        err["body_params"] = ve.errors()
+                        err["body_params"] = ve.errors(
+                            include_input=include_input,
+                            include_url=include_url,
+                            include_context=include_context
+                        )
             form_in_kwargs = func.__annotations__.get("form")
             form_model = form_in_kwargs or form
             if form_model:
@@ -212,19 +244,28 @@ def validate(
                     try:
                         f = form_model(__root__=form_params).__root__
                     except ValidationError as ve:
-                        err["form_params"] = ve.errors()
+                        err["form_params"] = ve.errors(
+                            include_input=include_input,
+                            include_url=include_url,
+                            include_context=include_context
+                        )
                 else:
                     try:
                         f = form_model(**form_params)
                     except TypeError:
-                        content_type = request.headers.get("Content-Type", "").lower()
+                        content_type = request.headers.get(
+                            "Content-Type", "").lower()
                         media_type = content_type.split(";")[0]
                         if media_type != "multipart/form-data":
                             return unsupported_media_type_response(content_type)
                         else:
                             raise JsonBodyParsingError
                     except ValidationError as ve:
-                        err["form_params"] = ve.errors()
+                        err["form_params"] = ve.errors(
+                            include_input=include_input,
+                            include_url=include_url,
+                            include_context=include_context
+                        )
             request.query_params = q
             request.body_params = b
             request.form_params = f
